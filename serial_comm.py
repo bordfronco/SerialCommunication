@@ -111,6 +111,52 @@ def send_data(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, s
         return (False, f"Error: {e}")
 
 
+def send_and_receive(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, str, str]:
+    """
+    Send a string message and wait for a response.
+
+    Args:
+        port: The COM port to use (e.g., 'COM1', 'COM3').
+        message: The string message to send.
+        encoding: Character encoding for string conversion. Defaults to 'utf-8'.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if send and receive were successful, False otherwise.
+            - message (str): Status message or error description.
+            - response (str): The response received as a string (empty if failed).
+    """
+    success, status = send_data(port, message, encoding)
+    if not success:
+        return (False, status, "")
+
+    success, status, response = read_data_as_string(port, encoding)
+    return (success, status, response)
+
+
+def send_and_receive_hex(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, str, List[int]]:
+    """
+    Send a string message and wait for a response as hex array.
+
+    Args:
+        port: The COM port to use (e.g., 'COM1', 'COM3').
+        message: The string message to send.
+        encoding: Character encoding for sending string. Defaults to 'utf-8'.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if send and receive were successful, False otherwise.
+            - message (str): Status message or error description.
+            - response (List[int]): The response as a list of integer values (0-255).
+    """
+    success, status = send_data(port, message, encoding)
+    if not success:
+        return (False, status, [])
+
+    success, status, response = read_data_as_hex(port)
+    return (success, status, response)
+
+
 def read_data(port: str) -> Tuple[bool, str, bytes]:
     """
     Read data from an open COM port. Waits until data is available.
