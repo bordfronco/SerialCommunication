@@ -111,13 +111,14 @@ def send_data(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, s
         return (False, f"Error: {e}")
 
 
-def send_and_receive(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, str, str]:
+def send_and_receive(port: str, message: str, delay: float = 0.1, encoding: str = "utf-8") -> Tuple[bool, str, str]:
     """
     Send a string message and wait for a response.
 
     Args:
         port: The COM port to use (e.g., 'COM1', 'COM3').
         message: The string message to send.
+        delay: Time in seconds to wait after sending before reading response. Defaults to 0.1.
         encoding: Character encoding for string conversion. Defaults to 'utf-8'.
 
     Returns:
@@ -126,21 +127,26 @@ def send_and_receive(port: str, message: str, encoding: str = "utf-8") -> Tuple[
             - message (str): Status message or error description.
             - response (str): The response received as a string (empty if failed).
     """
+    import time
+
     success, status = send_data(port, message, encoding)
     if not success:
         return (False, status, "")
+
+    time.sleep(delay)
 
     success, status, response = read_data_as_string(port, encoding)
     return (success, status, response)
 
 
-def send_and_receive_hex(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, str, List[int]]:
+def send_and_receive_hex(port: str, message: str, delay: float = 0.1, encoding: str = "utf-8") -> Tuple[bool, str, List[int]]:
     """
     Send a string message and wait for a response as hex array.
 
     Args:
         port: The COM port to use (e.g., 'COM1', 'COM3').
         message: The string message to send.
+        delay: Time in seconds to wait after sending before reading response. Defaults to 0.1.
         encoding: Character encoding for sending string. Defaults to 'utf-8'.
 
     Returns:
@@ -149,9 +155,13 @@ def send_and_receive_hex(port: str, message: str, encoding: str = "utf-8") -> Tu
             - message (str): Status message or error description.
             - response (List[int]): The response as a list of integer values (0-255).
     """
+    import time
+
     success, status = send_data(port, message, encoding)
     if not success:
         return (False, status, [])
+
+    time.sleep(delay)
 
     success, status, response = read_data_as_hex(port)
     return (success, status, response)
