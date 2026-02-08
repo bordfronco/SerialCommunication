@@ -6,7 +6,7 @@ Designed for use with NI TestStand with separate initialize, read, and close fun
 """
 
 import serial
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 
 # Store open serial connections
 _connections: Dict[str, serial.Serial] = {}
@@ -143,6 +143,32 @@ def read_data_as_string(port: str, encoding: str = "utf-8") -> Tuple[bool, str, 
             return (False, f"Decode error: {e}", "")
 
     return (False, message, "")
+
+
+def read_data_as_hex(port: str) -> Tuple[bool, str, List[int]]:
+    """
+    Read data from an open COM port and return as a list of hex values (integers).
+
+    Args:
+        port: The COM port to read from (e.g., 'COM1', 'COM3').
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if data was received successfully, False otherwise.
+            - message (str): Status message or error description.
+            - data (List[int]): The data as a list of integer values (0-255).
+
+    Example:
+        Returns: (True, "Received 3 bytes", [0x1A, 0x2B, 0x3C])
+        Which is equivalent to: (True, "Received 3 bytes", [26, 43, 60])
+    """
+    success, message, data_bytes = read_data(port)
+
+    if success:
+        hex_array = list(data_bytes)
+        return (True, message, hex_array)
+
+    return (False, message, [])
 
 
 def close_port(port: str) -> Tuple[bool, str]:
