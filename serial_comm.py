@@ -128,14 +128,23 @@ def send_data(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, s
         return (False, f"Error: {e}")
 
 
-def send_and_receive(port: str, message: str, delay: float = 0.1, encoding: str = "utf-8") -> Tuple[bool, str, str]:
+def send_and_receive(
+    port: str,
+    message: str,
+    initial_delay: float = 0.05,
+    inter_byte_timeout: float = 0.05,
+    max_wait: float = 5.0,
+    encoding: str = "utf-8"
+) -> Tuple[bool, str, str]:
     """
-    Send a string message and wait for a response.
+    Send a string message and wait for a complete response.
 
     Args:
         port: The COM port to use (e.g., 'COM1', 'COM3').
         message: The string message to send.
-        delay: Time in seconds to wait after sending before reading response. Defaults to 0.1.
+        initial_delay: Time in seconds to wait before starting to read. Defaults to 0.05.
+        inter_byte_timeout: Time in seconds to wait for more data after receiving bytes. Defaults to 0.05.
+        max_wait: Maximum time in seconds to wait for response. Defaults to 5.0.
         encoding: Character encoding for string conversion. Defaults to 'utf-8'.
 
     Returns:
@@ -144,26 +153,35 @@ def send_and_receive(port: str, message: str, delay: float = 0.1, encoding: str 
             - message (str): Status message or error description.
             - response (str): The response received as a string (empty if failed).
     """
-    import time
+    success, status, data_bytes = _send_and_receive_bytes(port, message, initial_delay, inter_byte_timeout, max_wait, encoding)
 
-    success, status = send_data(port, message, encoding)
-    if not success:
-        return (False, status, "")
+    if success:
+        try:
+            data_str = data_bytes.decode(encoding, errors="replace")
+            return (True, status, data_str)
+        except Exception as e:
+            return (False, f"Decode error: {e}", "")
 
-    time.sleep(delay)
-
-    success, status, response = read_data_as_string(port, encoding)
-    return (success, status, response)
+    return (False, status, "")
 
 
-def send_and_receive_hex(port: str, message: str, delay: float = 0.1, encoding: str = "utf-8") -> Tuple[bool, str, List[int]]:
+def send_and_receive_hex(
+    port: str,
+    message: str,
+    initial_delay: float = 0.05,
+    inter_byte_timeout: float = 0.05,
+    max_wait: float = 5.0,
+    encoding: str = "utf-8"
+) -> Tuple[bool, str, List[int]]:
     """
-    Send a string message and wait for a response as hex array.
+    Send a string message and wait for a complete response as hex array.
 
     Args:
         port: The COM port to use (e.g., 'COM1', 'COM3').
         message: The string message to send.
-        delay: Time in seconds to wait after sending before reading response. Defaults to 0.1.
+        initial_delay: Time in seconds to wait before starting to read. Defaults to 0.05.
+        inter_byte_timeout: Time in seconds to wait for more data after receiving bytes. Defaults to 0.05.
+        max_wait: Maximum time in seconds to wait for response. Defaults to 5.0.
         encoding: Character encoding for sending string. Defaults to 'utf-8'.
 
     Returns:
@@ -172,16 +190,65 @@ def send_and_receive_hex(port: str, message: str, delay: float = 0.1, encoding: 
             - message (str): Status message or error description.
             - response (List[int]): The response as a list of integer values (0-255).
     """
+    success, status, data_bytes = _send_and_receive_bytes(port, message, initial_delay, inter_byte_timeout, max_wait, encoding)
+
+    if success:
+        hex_array = list(data_bytes)
+        return (True, status, hex_array)
+
+    return (False, status, [])
+
+
+def _send_and_receive_bytes(
+    port: str,
+    message: str,
+    initial_delay: float,
+    inter_byte_timeout: float,
+    max_wait: float,
+    encoding: str
+) -> Tuple[bool, str, bytes]:
+    """
+    Internal function to send data and receive complete response as bytes.
+    Waits until no more data arrives for inter_byte_timeout period.
+    """
     import time
+
+    if port not in _connections or not _connections[port].is_open:
+        return (False, f"Port {port} is not open", b"")
 
     success, status = send_data(port, message, encoding)
     if not success:
-        return (False, status, [])
+        return (False, status, b"")
 
-    time.sleep(delay)
+    ser = _connections[port]
+    data = b""
+    start_time = time.time()
 
-    success, status, response = read_data_as_hex(port)
-    return (success, status, response)
+    # Initial delay before starting to read
+    time.sleep(initial_delay)
+
+    # Wait for first byte with max_wait timeout
+    while ser.in_waiting == 0:
+        if time.time() - start_time > max_wait:
+            return (False, "Timeout: No data received", b"")
+        time.sleep(0.001)
+
+    # Read data until no more bytes arrive for inter_byte_timeout period
+    last_read_time = time.time()
+    while True:
+        if ser.in_waiting > 0:
+            data += ser.read(ser.in_waiting)
+            last_read_time = time.time()
+        elif time.time() - last_read_time > inter_byte_timeout:
+            # No new data for inter_byte_timeout period, response complete
+            break
+        elif time.time() - start_time > max_wait:
+            # Max wait exceeded
+            break
+        else:
+            time.sleep(0.001)
+
+    return (True, f"Received {len(data)} bytes", data)
 
 
 def read_data(port: str) -> Tuple[bool, str, bytes]:
