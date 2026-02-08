@@ -18,7 +18,8 @@ def initialize_port(
     timeout: Optional[float] = None,
     bytesize: int = 8,
     parity: str = "N",
-    stopbits: float = 1
+    stopbits: float = 1,
+    flow_control: str = "none"
 ) -> Tuple[bool, str]:
     """
     Initialize and open a COM port.
@@ -30,6 +31,7 @@ def initialize_port(
         bytesize: Number of data bits (5, 6, 7, 8). Defaults to 8.
         parity: Parity checking ('N'=None, 'E'=Even, 'O'=Odd, 'M'=Mark, 'S'=Space). Defaults to 'N'.
         stopbits: Number of stop bits (1, 1.5, 2). Defaults to 1.
+        flow_control: Flow control type ('none', 'xonxoff', 'rtscts', 'dsrdtr'). Defaults to 'none'.
 
     Returns:
         Tuple containing:
@@ -60,6 +62,18 @@ def initialize_port(
         2: serial.STOPBITS_TWO
     }
 
+    # Flow control settings
+    xonxoff = False
+    rtscts = False
+    dsrdtr = False
+    flow_control_lower = flow_control.lower()
+    if flow_control_lower == "xonxoff":
+        xonxoff = True
+    elif flow_control_lower == "rtscts":
+        rtscts = True
+    elif flow_control_lower == "dsrdtr":
+        dsrdtr = True
+
     # Check if port is already open
     if port in _connections and _connections[port].is_open:
         return (False, f"Port {port} is already open")
@@ -71,10 +85,13 @@ def initialize_port(
             bytesize=bytesize_map.get(bytesize, serial.EIGHTBITS),
             parity=parity_map.get(parity.upper(), serial.PARITY_NONE),
             stopbits=stopbits_map.get(stopbits, serial.STOPBITS_ONE),
-            timeout=timeout
+            timeout=timeout,
+            xonxoff=xonxoff,
+            rtscts=rtscts,
+            dsrdtr=dsrdtr
         )
         _connections[port] = ser
-        return (True, f"Port {port} opened at {baudrate} baud")
+        return (True, f"Port {port} opened at {baudrate} baud, flow control: {flow_control}")
 
     except serial.SerialException as e:
         return (False, f"Serial error: {e}")
