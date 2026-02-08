@@ -82,6 +82,35 @@ def initialize_port(
         return (False, f"Error: {e}")
 
 
+def send_data(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, str]:
+    """
+    Send a string message through an open COM port.
+
+    Args:
+        port: The COM port to send data through (e.g., 'COM1', 'COM3').
+        message: The string message to send.
+        encoding: Character encoding for converting string to bytes. Defaults to 'utf-8'.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if data was sent successfully, False otherwise.
+            - message (str): Status message or error description.
+    """
+    if port not in _connections or not _connections[port].is_open:
+        return (False, f"Port {port} is not open")
+
+    try:
+        ser = _connections[port]
+        data_bytes = message.encode(encoding)
+        bytes_written = ser.write(data_bytes)
+        return (True, f"Sent {bytes_written} bytes")
+
+    except serial.SerialException as e:
+        return (False, f"Serial error: {e}")
+    except Exception as e:
+        return (False, f"Error: {e}")
+
+
 def read_data(port: str) -> Tuple[bool, str, bytes]:
     """
     Read data from an open COM port. Waits until data is available.
