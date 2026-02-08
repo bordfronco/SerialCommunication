@@ -1,26 +1,27 @@
 """
 Serial Communication Module
 
-This module provides functionality to open a COM port, wait for incoming data,
-and return the received data. Designed for use with NI TestStand.
+This module provides functionality to open a COM port, read data, and close the port.
+Designed for use with NI TestStand with separate initialize, read, and close functions.
 """
 
-import argparse
 import serial
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
+
+# Store open serial connections
+_connections: Dict[str, serial.Serial] = {}
 
 
-def receive_data(
+def initialize_port(
     port: str,
     baudrate: int = 9600,
     timeout: Optional[float] = None,
     bytesize: int = 8,
     parity: str = "N",
     stopbits: float = 1
-) -> Tuple[bool, str, bytes]:
+) -> Tuple[bool, str]:
     """
-    Open a COM port, wait for data to be received, and return the data.
-    Designed to be called from NI TestStand.
+    Initialize and open a COM port.
 
     Args:
         port: The COM port to open (e.g., 'COM1', 'COM3').
@@ -32,9 +33,8 @@ def receive_data(
 
     Returns:
         Tuple containing:
-            - success (bool): True if data was received successfully, False otherwise.
+            - success (bool): True if port opened successfully, False otherwise.
             - message (str): Status message or error description.
-            - data (bytes): The data received from the serial port (empty if failed).
     """
     # Map parity string to serial constants
     parity_map = {
@@ -60,26 +60,58 @@ def receive_data(
         2: serial.STOPBITS_TWO
     }
 
+    # Check if port is already open
+    if port in _connections and _connections[port].is_open:
+        return (False, f"Port {port} is already open")
+
     try:
-        with serial.Serial(
+        ser = serial.Serial(
             port=port,
             baudrate=baudrate,
             bytesize=bytesize_map.get(bytesize, serial.EIGHTBITS),
             parity=parity_map.get(parity.upper(), serial.PARITY_NONE),
             stopbits=stopbits_map.get(stopbits, serial.STOPBITS_ONE),
             timeout=timeout
-        ) as ser:
-            # Wait until at least one byte is available
-            while ser.in_waiting == 0:
-                if timeout is not None:
-                    break
+        )
+        _connections[port] = ser
+        return (True, f"Port {port} opened at {baudrate} baud")
 
-            if ser.in_waiting == 0:
-                return (False, "Timeout: No data received", b"")
+    except serial.SerialException as e:
+        return (False, f"Serial error: {e}")
+    except Exception as e:
+        return (False, f"Error: {e}")
 
-            # Read all available data
-            data = ser.read(ser.in_waiting)
-            return (True, f"Received {len(data)} bytes", data)
+
+def read_data(port: str) -> Tuple[bool, str, bytes]:
+    """
+    Read data from an open COM port. Waits until data is available.
+
+    Args:
+        port: The COM port to read from (e.g., 'COM1', 'COM3').
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if data was received successfully, False otherwise.
+            - message (str): Status message or error description.
+            - data (bytes): The data received from the serial port (empty if failed).
+    """
+    if port not in _connections or not _connections[port].is_open:
+        return (False, f"Port {port} is not open", b"")
+
+    try:
+        ser = _connections[port]
+
+        # Wait until at least one byte is available
+        while ser.in_waiting == 0:
+            if ser.timeout is not None:
+                break
+
+        if ser.in_waiting == 0:
+            return (False, "Timeout: No data received", b"")
+
+        # Read all available data
+        data = ser.read(ser.in_waiting)
+        return (True, f"Received {len(data)} bytes", data)
 
     except serial.SerialException as e:
         return (False, f"Serial error: {e}", b"")
@@ -87,26 +119,12 @@ def receive_data(
         return (False, f"Error: {e}", b"")
 
 
-def receive_data_as_string(
-    port: str,
-    baudrate: int = 9600,
-    timeout: Optional[float] = None,
-    bytesize: int = 8,
-    parity: str = "N",
-    stopbits: float = 1,
-    encoding: str = "utf-8"
-) -> Tuple[bool, str, str]:
+def read_data_as_string(port: str, encoding: str = "utf-8") -> Tuple[bool, str, str]:
     """
-    Open a COM port, wait for data to be received, and return the data as a string.
-    Convenience function for NI TestStand when string data is expected.
+    Read data from an open COM port and return as a string.
 
     Args:
-        port: The COM port to open (e.g., 'COM1', 'COM3').
-        baudrate: The baud rate for serial communication. Defaults to 9600.
-        timeout: Read timeout in seconds. None means wait indefinitely.
-        bytesize: Number of data bits (5, 6, 7, 8). Defaults to 8.
-        parity: Parity checking ('N'=None, 'E'=Even, 'O'=Odd, 'M'=Mark, 'S'=Space). Defaults to 'N'.
-        stopbits: Number of stop bits (1, 1.5, 2). Defaults to 1.
+        port: The COM port to read from (e.g., 'COM1', 'COM3').
         encoding: Character encoding for decoding bytes to string. Defaults to 'utf-8'.
 
     Returns:
@@ -115,14 +133,7 @@ def receive_data_as_string(
             - message (str): Status message or error description.
             - data (str): The data received as a decoded string (empty if failed).
     """
-    success, message, data_bytes = receive_data(
-        port=port,
-        baudrate=baudrate,
-        timeout=timeout,
-        bytesize=bytesize,
-        parity=parity,
-        stopbits=stopbits
-    )
+    success, message, data_bytes = read_data(port)
 
     if success:
         try:
@@ -134,33 +145,70 @@ def receive_data_as_string(
     return (False, message, "")
 
 
-def main():
-    """Main entry point for command-line usage."""
-    parser = argparse.ArgumentParser(description="Serial communication - receive data from COM port")
-    parser.add_argument("port", help="COM port (e.g., COM1, COM3)")
-    parser.add_argument("-b", "--baudrate", type=int, default=9600, help="Baud rate (default: 9600)")
-    parser.add_argument("-t", "--timeout", type=float, default=None, help="Read timeout in seconds (default: None)")
-    parser.add_argument("--bytesize", type=int, choices=[5, 6, 7, 8], default=8, help="Data bits (default: 8)")
-    parser.add_argument("--parity", choices=["N", "E", "O", "M", "S"], default="N", help="Parity: N=None, E=Even, O=Odd, M=Mark, S=Space (default: N)")
-    parser.add_argument("--stopbits", type=float, choices=[1, 1.5, 2], default=1, help="Stop bits (default: 1)")
+def close_port(port: str) -> Tuple[bool, str]:
+    """
+    Close an open COM port.
 
-    args = parser.parse_args()
+    Args:
+        port: The COM port to close (e.g., 'COM1', 'COM3').
 
-    success, message, data = receive_data(
-        port=args.port,
-        baudrate=args.baudrate,
-        timeout=args.timeout,
-        bytesize=args.bytesize,
-        parity=args.parity,
-        stopbits=args.stopbits
-    )
+    Returns:
+        Tuple containing:
+            - success (bool): True if port closed successfully, False otherwise.
+            - message (str): Status message or error description.
+    """
+    if port not in _connections:
+        return (False, f"Port {port} was not initialized")
 
-    print(f"Success: {success}")
-    print(f"Message: {message}")
-    if success:
-        print(f"Data (bytes): {data}")
-        print(f"Data (string): {data.decode('utf-8', errors='replace')}")
+    try:
+        ser = _connections[port]
+        if ser.is_open:
+            ser.close()
+        del _connections[port]
+        return (True, f"Port {port} closed")
+
+    except serial.SerialException as e:
+        return (False, f"Serial error: {e}")
+    except Exception as e:
+        return (False, f"Error: {e}")
 
 
-if __name__ == "__main__":
-    main()
+def close_all_ports() -> Tuple[bool, str]:
+    """
+    Close all open COM ports.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if all ports closed successfully, False otherwise.
+            - message (str): Status message listing closed ports.
+    """
+    closed_ports = []
+    errors = []
+
+    for port in list(_connections.keys()):
+        success, message = close_port(port)
+        if success:
+            closed_ports.append(port)
+        else:
+            errors.append(f"{port}: {message}")
+
+    if errors:
+        return (False, f"Errors closing ports: {'; '.join(errors)}")
+
+    if closed_ports:
+        return (True, f"Closed ports: {', '.join(closed_ports)}")
+
+    return (True, "No ports to close")
+
+
+def is_port_open(port: str) -> bool:
+    """
+    Check if a COM port is currently open.
+
+    Args:
+        port: The COM port to check (e.g., 'COM1', 'COM3').
+
+    Returns:
+        bool: True if the port is open, False otherwise.
+    """
+    return port in _connections and _connections[port].is_open
