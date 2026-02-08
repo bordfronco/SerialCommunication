@@ -99,7 +99,12 @@ def initialize_port(
         return (False, f"Error: {e}")
 
 
-def send_data(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, str]:
+def send_data(
+    port: str,
+    message: str,
+    encoding: str = "utf-8",
+    char_delay: float = 0.0
+) -> Tuple[bool, str]:
     """
     Send a string message through an open COM port.
 
@@ -107,19 +112,35 @@ def send_data(port: str, message: str, encoding: str = "utf-8") -> Tuple[bool, s
         port: The COM port to send data through (e.g., 'COM1', 'COM3').
         message: The string message to send.
         encoding: Character encoding for converting string to bytes. Defaults to 'utf-8'.
+        char_delay: Delay in seconds between each byte sent. Defaults to 0.0 (no delay).
+                    Use small values like 0.001 to 0.01 for slow devices.
 
     Returns:
         Tuple containing:
             - success (bool): True if data was sent successfully, False otherwise.
             - message (str): Status message or error description.
     """
+    import time
+
     if port not in _connections or not _connections[port].is_open:
         return (False, f"Port {port} is not open")
 
     try:
         ser = _connections[port]
         data_bytes = message.encode(encoding)
-        bytes_written = ser.write(data_bytes)
+
+        if char_delay > 0:
+            # Send one byte at a time with delay
+            for byte in data_bytes:
+                ser.write(bytes([byte]))
+                ser.flush()
+                time.sleep(char_delay)
+            bytes_written = len(data_bytes)
+        else:
+            # Send all at once
+            bytes_written = ser.write(data_bytes)
+            ser.flush()
+
         return (True, f"Sent {bytes_written} bytes")
 
     except serial.SerialException as e:
@@ -134,7 +155,8 @@ def send_and_receive(
     initial_delay: float = 0.05,
     inter_byte_timeout: float = 0.05,
     max_wait: float = 5.0,
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    char_delay: float = 0.0
 ) -> Tuple[bool, str, str]:
     """
     Send a string message and wait for a complete response.
@@ -146,6 +168,7 @@ def send_and_receive(
         inter_byte_timeout: Time in seconds to wait for more data after receiving bytes. Defaults to 0.05.
         max_wait: Maximum time in seconds to wait for response. Defaults to 5.0.
         encoding: Character encoding for string conversion. Defaults to 'utf-8'.
+        char_delay: Delay in seconds between each byte sent. Defaults to 0.0 (no delay).
 
     Returns:
         Tuple containing:
@@ -153,7 +176,7 @@ def send_and_receive(
             - message (str): Status message or error description.
             - response (str): The response received as a string (empty if failed).
     """
-    success, status, data_bytes = _send_and_receive_bytes(port, message, initial_delay, inter_byte_timeout, max_wait, encoding)
+    success, status, data_bytes = _send_and_receive_bytes(port, message, initial_delay, inter_byte_timeout, max_wait, encoding, char_delay)
 
     if success:
         try:
@@ -171,7 +194,8 @@ def send_and_receive_hex(
     initial_delay: float = 0.05,
     inter_byte_timeout: float = 0.05,
     max_wait: float = 5.0,
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    char_delay: float = 0.0
 ) -> Tuple[bool, str, List[int]]:
     """
     Send a string message and wait for a complete response as hex array.
@@ -183,6 +207,7 @@ def send_and_receive_hex(
         inter_byte_timeout: Time in seconds to wait for more data after receiving bytes. Defaults to 0.05.
         max_wait: Maximum time in seconds to wait for response. Defaults to 5.0.
         encoding: Character encoding for sending string. Defaults to 'utf-8'.
+        char_delay: Delay in seconds between each byte sent. Defaults to 0.0 (no delay).
 
     Returns:
         Tuple containing:
@@ -190,7 +215,7 @@ def send_and_receive_hex(
             - message (str): Status message or error description.
             - response (List[int]): The response as a list of integer values (0-255).
     """
-    success, status, data_bytes = _send_and_receive_bytes(port, message, initial_delay, inter_byte_timeout, max_wait, encoding)
+    success, status, data_bytes = _send_and_receive_bytes(port, message, initial_delay, inter_byte_timeout, max_wait, encoding, char_delay)
 
     if success:
         hex_array = list(data_bytes)
@@ -205,7 +230,8 @@ def _send_and_receive_bytes(
     initial_delay: float,
     inter_byte_timeout: float,
     max_wait: float,
-    encoding: str
+    encoding: str,
+    char_delay: float
 ) -> Tuple[bool, str, bytes]:
     """
     Internal function to send data and receive complete response as bytes.
@@ -216,7 +242,7 @@ def _send_and_receive_bytes(
     if port not in _connections or not _connections[port].is_open:
         return (False, f"Port {port} is not open", b"")
 
-    success, status = send_data(port, message, encoding)
+    success, status = send_data(port, message, encoding, char_delay)
     if not success:
         return (False, status, b"")
 
